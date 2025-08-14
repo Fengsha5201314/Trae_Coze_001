@@ -1,0 +1,456 @@
+// Robust SSE streaming and JSON parsing with tolerant handling and logging
+// This script provides a function to read Server-Sent Events (SSE) over fetch
+// and parse JSON data safely without throwing on non-JSON segments.
+
+async function streamSSE(url, fetchOptions = {}, {
+    onEvent = () => {},     // (eventName, dataString, jsonOrNull)
+    onMessage = () => {},   // (messageString)
+    onError = () => {}      // (error)
+} = {}) {
+    const resp = await fetch(url, {
+        method: fetchOptions.method || 'GET',
+        headers: fetchOptions.headers,
+        body: fetchOptions.body,
+        signal: fetchOptions.signal,
+        keepalive: fetchOptions.keepalive,
+        // Ensure we accept SSE
+        ...fetchOptions,
+    });
+
+    if (!resp.ok) {
+        const text = await safeReadText(resp);
+        console.warn('SSE请求失败', resp.status, resp.statusText, text?.slice?.(0, 200));
+        return undefined;
+    }
+
+    const reader = resp.body?.getReader?.();
+    if (!reader) {
+        console.warn('响应体不支持Reader');
+        return undefined;
+    }
+
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let currentEventName = null;
+    let currentDataLines = [];
+    let finalResult = undefined;
+
+    const finalizeEvent = () => {
+        if (currentDataLines.length === 0) return;
+        const dataContent = currentDataLines.join('\n');
+        currentDataLines = [];
+        try {
+            if (dataContent === '[DONE]') return;
+            // 仅当以{或[开头时才尝试JSON解析，避免例如%或其他非JSON导致的异常
+            const looksJson = /^(\s*[\[{])/.test(dataContent);
+            if (!looksJson) {
+                console.debug('忽略非JSON的SSE data片段:', dataContent.slice(0, 120));
+                onEvent(currentEventName || 'message', dataContent, null);
+            } else {
+                try {
+                    const jsonData = JSON.parse(dataContent);
+                    console.log('SSE事件', currentEventName || 'message', jsonData);
+                    onEvent(currentEventName || 'message', dataContent, jsonData);
+                    if (
+                        jsonData.event === 'workflow.finish' ||
+                        jsonData.event === 'workflow.run.finish' ||
+                        jsonData.output || jsonData.data || jsonData.content
+                    ) {
+                        finalResult = jsonData;
+                    }
+                } catch (e) {
+                    console.warn('SSE事件JSON解析失败:', dataContent.slice(0, 200), e);
+                    onEvent(currentEventName || 'message', dataContent, null);
+                }
+            }
+        } catch (e) {
+            console.warn('SSE事件解析失败(总捕获):', dataContent.slice(0, 200), e);
+        }
+        currentEventName = null;
+    };
+
+    try {
+        // Read the stream
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            buffer += chunk;
+
+            // Deliver raw message callback if needed
+            try { onMessage(chunk); } catch {}
+
+            let idx;
+            while ((idx = buffer.indexOf('\n')) !== -1) {
+                const line = buffer.slice(0, idx);
+                buffer = buffer.slice(idx + 1);
+
+                const trimmed = line.replace(/\r$/, '');
+                if (trimmed === '') {
+                    // Event boundary
+                    finalizeEvent();
+                    continue;
+                }
+
+                if (trimmed.startsWith('event:')) {
+                    currentEventName = trimmed.slice(6).trim();
+                    continue;
+                }
+
+                if (trimmed.startsWith('data:')) {
+                    currentDataLines.push(trimmed.slice(5).trimStart());
+                    continue;
+                }
+
+                // Optional: handle id:, retry: if needed; otherwise treat as data line
+                if (trimmed.startsWith('id:') || trimmed.startsWith('retry:')) {
+                    // Ignored for our purposes
+                    continue;
+                }
+
+                // Fallback: treat as data payload line (some servers omit the prefix)
+                currentDataLines.push(trimmed);
+            }
+        }
+
+        // Flush the last pending event if any
+        finalizeEvent();
+
+        // Tail fallback parsing per plan
+        const tail = (buffer || '').trim();
+        if (!finalResult && tail) {
+            const looksJson = /^(\s*[\[{])/.test(tail);
+            if (looksJson) {
+                try {
+                    finalResult = JSON.parse(tail);
+                } catch (e) {
+                    console.warn('尾部兜底JSON解析失败:', tail.slice(0, 200), e);
+                }
+            } else {
+                console.debug('尾部缓冲非JSON，忽略:', tail.slice(0, 120));
+            }
+        }
+
+        return finalResult;
+    } catch (err) {
+        try { onError(err); } catch {}
+        console.warn('SSE流处理异常:', err);
+        // 不抛出，直接返回已有结果或undefined
+        return finalResult;
+    } finally {
+        try { await reader.cancel(); } catch {}
+    }
+}
+
+async function safeReadText(resp) {
+    try { return await resp.text(); } catch { return undefined; }
+}
+
+// Export for Node/CommonJS
+if (typeof module !== 'undefined') {
+    module.exports = { streamSSE };
+}
+
+// =========================
+// Browser UI Integration
+// =========================
+(function initUI() {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+    const els = {
+        input: document.getElementById('input'),
+        feishu: document.getElementById('feishu_token'),
+        workflow: document.getElementById('workflow_id'),
+        token: document.getElementById('api_token'),
+        num: document.getElementById('num'),
+        execBtn: document.getElementById('executeBtn'),
+        resultSection: document.getElementById('resultSection'),
+        resultContent: document.getElementById('resultContent'),
+        resultFeishu: document.getElementById('resultFeishu'),
+        resultDebug: document.getElementById('resultDebug'),
+        resultInfo: document.getElementById('resultInfo'),
+        copyBtn: document.getElementById('copyBtn'),
+        status: document.getElementById('statusMessage'),
+    };
+
+    // 如果页面不是本项目模板，直接返回
+    if (!els.execBtn || !els.input) return;
+
+    // 预填示例数据（便于测试）
+    try {
+        if (els.input && !els.input.value) {
+            els.input.value = '请围绕以下抖音视频，生成摘要要点（5条以内）、金句提炼（不超过3条），并给出一个适合发布的标题与简介建议，突出"励志、情感"风格。视频链接：https://v.douyin.com/6XjSDJAk3ak/；文案片段：活着，就必须逢山开路，遇水搭桥，否则与庸人合一。请兼顾横屏版/1分钟剪辑建议。';
+        }
+        if (els.workflow && !els.workflow.value) {
+            els.workflow.value = '7538098194430640164';
+        }
+        if (els.num && !els.num.value) {
+            els.num.value = '2';
+        }
+        if (els.feishu && !els.feishu.value) {
+            els.feishu.value = 'https://vqt9c12lrhq.feishu.cn/base/W0tJbnJHjaq4h5sq6tbcU1SGnOg?table=tblyIqLbcs9RWWNg&view=vewnaa9RUI';
+        }
+        if (els.token && !els.token.value) {
+            els.token.value = 'pat_fIu5tE4WK74lsXs3NmYS2CZNsGjhxCcV7VBTookggh1wdEwQA8XeEOKd1brEFeCY';
+        }
+        setStatus('已为你预填真实测试数据，可直接点击"执行工作流"进行测试。', 'info');
+    } catch {}
+
+    els.execBtn.addEventListener('click', async () => {
+        try {
+            toggleLoading(true);
+            clearResult();
+            setStatus('正在校验参数…', 'info');
+
+            // 参数校验
+            const token = (els.token?.value || '').trim();
+            const workflow_id = (els.workflow?.value || '').trim();
+            const input = (els.input?.value || '').trim();
+            const numRaw = (els.num?.value || '').trim();
+            const feishu_token = (els.feishu?.value || '').trim();
+
+            if (!token) throw new Error('请先填写 API Token');
+            if (!workflow_id) throw new Error('请填写工作流ID');
+            if (!input) throw new Error('请输入要处理的内容');
+
+            const NUM = clampInt(parseInt(numRaw || '2', 10), 1, 10);
+
+            const payload = {
+                workflow_id,
+                parameters: {
+                    input,
+                    NUM,
+                    ...(feishu_token ? { feishu_token } : {}),
+                },
+            };
+
+            setStatus('正在调用Coze工作流（SSE）…', 'info');
+
+            // 尝试直连，失败时自动切换代理
+            let url = 'https://api.coze.cn/v1/workflow/stream_run';
+            let useProxy = false;
+            const headers = {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                Accept: 'text/event-stream, application/json;q=0.9, */*;q=0.8',
+                'Cache-Control': 'no-store',
+            };
+
+            let collectedLogs = [];
+            let result;
+            
+            try {
+                // 第一次尝试：直连Coze API
+                result = await streamSSE(url, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(payload),
+                }, {
+                    onEvent: (evt, data, json) => {
+                        if (json) {
+                            collectedLogs.push(`[${evt}] ${safeToStr(json)}`);
+                        } else if (data) {
+                            const snip = (data || '').slice(0, 120);
+                            collectedLogs.push(`[${evt}] ${snip}`);
+                        }
+                        if (collectedLogs.length % 3 === 0) {
+                            setStatus('工作流执行中…已接收事件 ' + collectedLogs.length, 'info');
+                        }
+                    },
+                    onMessage: () => {},
+                    onError: (e) => console.warn('SSE回调错误', e),
+                });
+            } catch (directError) {
+                // 检查是否为CORS错误
+                const isCorsError = directError.message.includes('fetch') || 
+                                  directError.message.includes('CORS') ||
+                                  directError.message.includes('Access-Control');
+                
+                if (isCorsError) {
+                    setStatus('直连失败，尝试代理模式…', 'info');
+                    console.log('检测到CORS错误，切换到代理模式:', directError.message);
+                    
+                    // 切换到代理URL
+                    url = 'http://localhost:8001/v1/workflow/stream_run';
+                    useProxy = true;
+                    collectedLogs = []; // 重置日志
+                    
+                    // 第二次尝试：通过代理
+                    result = await streamSSE(url, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify(payload),
+                    }, {
+                        onEvent: (evt, data, json) => {
+                            if (json) {
+                                collectedLogs.push(`[${evt}] ${safeToStr(json)}`);
+                            } else if (data) {
+                                const snip = (data || '').slice(0, 120);
+                                collectedLogs.push(`[${evt}] ${snip}`);
+                            }
+                            if (collectedLogs.length % 3 === 0) {
+                                setStatus('工作流执行中…已接收事件 ' + collectedLogs.length, 'info');
+                            }
+                        },
+                        onMessage: () => {},
+                        onError: (e) => console.warn('SSE回调错误', e),
+                    });
+                } else {
+                    throw directError; // 非CORS错误，直接抛出
+                }
+            }
+
+            setStatus('正在处理返回结果…', 'info');
+            const normalized = normalizeLikeCozeResult(result);
+            renderResult(normalized, collectedLogs);
+            
+            if (useProxy) {
+                setStatus('执行成功（通过代理模式）', 'success');
+            } else {
+                setStatus('执行成功', 'success');
+            }
+        } catch (err) {
+            console.error(err);
+            const msg = err?.message || '执行失败';
+            setStatus(msg, 'error');
+        } finally {
+            toggleLoading(false);
+        }
+    });
+
+    els.copyBtn?.addEventListener('click', async () => {
+        const text = getCopyText();
+        try {
+            await navigator.clipboard.writeText(text);
+            setStatus('结果已复制到剪贴板', 'success');
+        } catch {
+            setStatus('复制失败，请手动选择内容复制', 'error');
+        }
+    });
+
+    function toggleLoading(loading) {
+        if (!els.execBtn) return;
+        els.execBtn.classList.toggle('loading', !!loading);
+    }
+
+    function setStatus(message, type) {
+        if (!els.status) return;
+        els.status.textContent = message;
+        els.status.classList.remove('hidden');
+        els.status.classList.remove('success', 'error', 'info');
+        els.status.classList.add(type || 'info');
+    }
+
+    function clearResult() {
+        if (els.resultSection) els.resultSection.classList.add('hidden');
+        if (els.resultContent) els.resultContent.textContent = '';
+        if (els.resultFeishu) els.resultFeishu.textContent = '';
+        if (els.resultDebug) els.resultDebug.textContent = '';
+        if (els.resultInfo) els.resultInfo.textContent = '';
+    }
+
+    function renderResult(res, logs) {
+        try {
+            if (!res) res = {};
+            const { message, feishu_url, debug_url, raw } = res;
+            if (els.resultContent) {
+                els.resultContent.textContent = message || safeToStr(raw) || '（无内容）';
+            }
+            if (els.resultFeishu) {
+                if (feishu_url) {
+                    els.resultFeishu.innerHTML = `<a href="${escapeHtml(feishu_url)}" target="_blank">${escapeHtml(feishu_url)}</a>`;
+                } else {
+                    els.resultFeishu.textContent = '（无）';
+                }
+            }
+            if (els.resultDebug) {
+                if (debug_url) {
+                    els.resultDebug.innerHTML = `<a href="${escapeHtml(debug_url)}" target="_blank">${escapeHtml(debug_url)}</a>`;
+                } else {
+                    els.resultDebug.textContent = '（无）';
+                }
+            }
+            if (els.resultInfo) {
+                const info = `原始数据片段：\n${(safeToStr(raw) || '').slice(0, 800)}\n\n事件日志(最多展示前10条)：\n- ${logs.slice(0,10).join('\n- ')}`;
+                els.resultInfo.textContent = info;
+            }
+            if (els.resultSection) els.resultSection.classList.remove('hidden');
+        } catch (e) {
+            console.warn('结果渲染异常', e);
+        }
+    }
+
+    function getCopyText() {
+        const lines = [];
+        if (els.resultContent?.textContent) lines.push('处理结果:\n' + els.resultContent.textContent);
+        if (els.resultFeishu?.textContent) lines.push('飞书链接:\n' + els.resultFeishu.textContent);
+        if (els.resultDebug?.textContent) lines.push('调试链接:\n' + els.resultDebug.textContent);
+        if (els.resultInfo?.textContent) lines.push('执行信息:\n' + els.resultInfo.textContent);
+        return lines.join('\n\n');
+    }
+
+    function clampInt(n, min, max) { return isFinite(n) ? Math.max(min, Math.min(max, n)) : min; }
+
+    function escapeHtml(s) {
+        return String(s || '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    }
+
+    function safeToStr(obj) {
+        try { return typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2); } catch { return String(obj); }
+    }
+
+    // 尝试贴近之前实现的normalize结果
+    function normalizeLikeCozeResult(raw) {
+        if (!raw) return { raw };
+        try {
+            // 常见结构尝试
+            if (raw.output?.nodes?.length) {
+                const node = raw.output.nodes.find(n => n?.type === 'result') || raw.output.nodes[raw.output.nodes.length - 1];
+                const content = node?.outputs?.[0]?.content || node?.content || '';
+                return normalizeFromContent(content, raw);
+            }
+            if (Array.isArray(raw.data) && raw.data.length) {
+                const item = raw.data[0];
+                const content = item?.content || item?.message || '';
+                return normalizeFromContent(content, raw);
+            }
+            if (raw.content || raw.message) {
+                return normalizeFromContent(raw.content || raw.message, raw);
+            }
+        } catch (e) {
+            console.warn('normalize异常', e);
+        }
+        return { raw };
+    }
+
+    function normalizeFromContent(content, raw) {
+        // content 可能是JSON字符串，也可能是纯文本
+        if (typeof content === 'string') {
+            const trimmed = content.trim();
+            if (/^[\[{]/.test(trimmed)) {
+                try {
+                    const obj = JSON.parse(trimmed);
+                    return pickFields(obj, raw);
+                } catch {}
+            }
+            return { message: trimmed, raw };
+        }
+        if (typeof content === 'object' && content) {
+            return pickFields(content, raw);
+        }
+        return { raw };
+    }
+
+    function pickFields(obj, raw) {
+        const message = obj.message || obj.result || obj.text || obj.summary || '';
+        const feishu_url = obj.feishu_url || obj.feishu || obj.url || '';
+        const debug_url = obj.debug_url || obj.debug || '';
+        return { message, feishu_url, debug_url, raw: raw ?? obj };
+    }
+})();

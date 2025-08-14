@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coze工作流调用器</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- 粒子背景画布 -->
+    <canvas id="particleCanvas"></canvas>
+    
+    <!-- 主容器 -->
+    <div class="container">
+        <!-- 标题区域 -->
+        <header class="header">
+            <h1 class="title">Coze工作流调用器</h1>
+            <p class="subtitle">智能工作流，一键执行</p>
+            <div class="author-info">
+                <span class="author-text">作者：风沙 | 微信：Love_Gws_1314</span>
+            </div>
+            <!-- 操作手册链接 -->
+            <div class="manual-link">
+                <a href="manual.html" target="_blank" class="manual-btn">
+                    <span class="manual-icon">📖</span>
+                    <span class="manual-text">操作手册</span>
+                </a>
+            </div>
+        </header>
+
+        <!-- 参数输入区域 -->
+        <div class="input-section">
+            <div class="form-group">
+                <label for="input" class="form-label">输入内容</label>
+                <input type="text" id="input" class="form-input" placeholder="请输入要处理的内容...">
+            </div>
+
+            <div class="form-group">
+                <label for="feishu_token" class="form-label">飞书链接</label>
+                <input type="url" id="feishu_token" class="form-input" placeholder="https://vqt9c12lrhq.feishu.cn/base/...">
+            </div>
+
+            <div class="form-group">
+                <label for="workflow_id" class="form-label">工作流ID</label>
+                <input type="text" id="workflow_id" class="form-input" placeholder="7538098194430640164">
+                <div class="input-hint">在Coze工作流详情页中复制Workflow ID</div>
+            </div>
+
+            <div class="form-group">
+                <label for="api_token" class="form-label">API Token</label>
+                <input type="password" id="api_token" class="form-input" placeholder="请输入您的Coze API Token...">
+                <div class="input-hint">请输入有效的Coze API Token以进行身份验证</div>
+            </div>
+
+            <div class="form-group">
+                <label for="num" class="form-label">数量</label>
+                <input type="number" id="num" class="form-input" placeholder="2" value="2" min="1" max="10">
+            </div>
+        </div>
+
+        <!-- 执行按钮 -->
+        <div class="action-section">
+            <button id="executeBtn" class="execute-btn">
+                <span class="btn-text">执行工作流</span>
+                <div class="btn-loader"></div>
+            </button>
+        </div>
+
+        <!-- 结果展示区域 -->
+        <div id="resultSection" class="result-section hidden">
+            <h3 class="result-title">执行结果</h3>
+            <div class="result-content">
+                <div class="result-item">
+                    <label class="result-label">处理结果：</label>
+                    <div id="resultContent" class="result-value"></div>
+                </div>
+                <div class="result-item">
+                    <label class="result-label">调试链接：</label>
+                    <div id="resultDebug" class="result-value"></div>
+                </div>
+            </div>
+            <button id="copyBtn" class="copy-btn">复制结果</button>
+        </div>
+
+        <!-- 状态提示 -->
+        <div id="statusMessage" class="status-message hidden"></div>
+    </div>
+
+    <!-- 成功庆祝画布 -->
+    <canvas id="celebrationCanvas"></canvas>
+
+    <script src="script.js?v=20250814-2"></script>
+</body>
+</html>

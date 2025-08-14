@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coze工作流调用器 - 操作手册</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* 手册专用样式 */
+        .manual-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+            position: relative;
+            z-index: 10;
+        }
+        
+        .manual-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        
+        .manual-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(45deg, #00d4ff, #9d4edd, #00ff88);
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradientShift 3s ease-in-out infinite;
+            margin-bottom: 1rem;
+        }
+        
+        .manual-subtitle {
+            color: #a0a0a0;
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1.2rem;
+            background: rgba(0, 212, 255, 0.2);
+            border: 2px solid #00d4ff;
+            border-radius: 20px;
+            color: #00d4ff;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .back-btn:hover {
+            background: rgba(0, 212, 255, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 212, 255, 0.3);
+        }
+        
+        .manual-content {
+            display: grid;
+            gap: 2rem;
+        }
+        
+        .step-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 2rem;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .step-card:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(0, 212, 255, 0.5);
+            box-shadow: 0 8px 32px rgba(0, 212, 255, 0.2);
+            transform: translateY(-5px);
+        }
+        
+        .step-number {
+            position: absolute;
+            top: -10px;
+            left: 2rem;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+        }
+        
+        .step-title {
+            color: #00d4ff;
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .step-description {
+            color: #e0e0e0;
+            line-height: 1.6;
+            margin-bottom: 1rem;
+        }
+        
+        .step-tips {
+            background: rgba(0, 255, 136, 0.1);
+            border-left: 4px solid #00ff88;
+            padding: 1rem;
+            border-radius: 0 10px 10px 0;
+            margin-top: 1rem;
+        }
+        
+        .tips-title {
+            color: #00ff88;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .tips-text {
+            color: #c0c0c0;
+            font-size: 0.9rem;
+        }
+        
+        .highlight {
+            color: #ff6b6b;
+            font-weight: 600;
+        }
+        
+        .code-snippet {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: 'Courier New', monospace;
+            color: #00ff88;
+            margin: 1rem 0;
+            overflow-x: auto;
+        }
+        
+        .warning {
+            background: rgba(255, 107, 107, 0.1);
+            border-left: 4px solid #ff6b6b;
+            padding: 1rem;
+            border-radius: 0 10px 10px 0;
+            margin: 1rem 0;
+        }
+        
+        .warning-title {
+            color: #ff6b6b;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- 粒子背景画布 -->
+    <canvas id="particleCanvas"></canvas>
+    
+    <div class="manual-container">
+        <!-- 手册头部 -->
+        <div class="manual-header">
+            <h1 class="manual-title">📖 操作手册</h1>
+            <p class="manual-subtitle">快速上手 Coze 工作流调用器</p>
+            <a href="index.html" class="back-btn">
+                <span>←</span>
+                <span>返回主页</span>
+            </a>
+        </div>
+        
+        <!-- 手册内容 -->
+        <div class="manual-content">
+            <!-- 步骤1 -->
+            <div class="step-card">
+                <div class="step-number">1</div>
+                <h3 class="step-title">🚀 准备工作</h3>
+                <p class="step-description">
+                    在开始使用之前，您需要准备以下信息：
+                </p>
+                <ul class="step-description">
+                    <li><span class="highlight">Coze API Token</span>：在 Coze 平台获取您的 API 密钥</li>
+                    <li><span class="highlight">工作流ID</span>：您要调用的工作流的唯一标识符</li>
+                    <li><span class="highlight">飞书文档链接</span>：用于数据输入的飞书表格链接</li>
+                </ul>
+                <div class="step-tips">
+                    <div class="tips-title">💡 获取 API Token</div>
+                    <div class="tips-text">登录 Coze 平台 → 个人设置 → API 密钥 → 创建新密钥</div>
+                </div>
+            </div>
+            
+            <!-- 步骤2 -->
+            <div class="step-card">
+                <div class="step-number">2</div>
+                <h3 class="step-title">📝 填写参数</h3>
+                <p class="step-description">
+                    在主页面的表单中填写以下参数：
+                </p>
+                <div class="code-snippet">
+输入内容：请围绕以下抖音视频，生成满意要点（5条以内）、金句提炼（不超过3条）
+飞书链接：https://vqt9c12lrhq.feishu.cn/base/W0tJbnJHjaq4hSsq6tbcU1SGnOg?table=tblylqLbcs9RV
+Workflow ID：7538098194430640164
+API Token：您的密钥
+数量：2
+                </div>
+                <div class="warning">
+                    <div class="warning-title">⚠️ 安全提醒</div>
+                    <div class="tips-text">请妥善保管您的 API Token，不要在公共场所或截图中泄露</div>
+                </div>
+            </div>
+            
+            <!-- 步骤3 -->
+            <div class="step-card">
+                <div class="step-number">3</div>
+                <h3 class="step-title">⚡ 执行工作流</h3>
+                <p class="step-description">
+                    点击 <span class="highlight">"执行工作流"</span> 按钮开始处理：
+                </p>
+                <ul class="step-description">
+                    <li>系统会自动验证您的参数</li>
+                    <li>显示实时执行状态和进度</li>
+                    <li>处理完成后展示结果</li>
+                </ul>
+                <div class="step-tips">
+                    <div class="tips-title">🔄 执行状态</div>
+                    <div class="tips-text">蓝色加载 = 执行中 | 绿色提示 = 成功 | 红色提示 = 失败</div>
+                </div>
+            </div>
+            
+            <!-- 步骤4 -->
+            <div class="step-card">
+                <div class="step-number">4</div>
+                <h3 class="step-title">📋 查看结果</h3>
+                <p class="step-description">
+                    执行完成后，您可以：
+                </p>
+                <ul class="step-description">
+                    <li>查看 <span class="highlight">处理结果</span>：工作流的输出内容</li>
+                    <li>访问 <span class="highlight">调试链接</span>：查看详细执行日志</li>
+                    <li>点击 <span class="highlight">"复制结果"</span>：一键复制所有内容</li>
+                </ul>
+                <div class="step-tips">
+                    <div class="tips-title">🎉 成功提示</div>
+                    <div class="tips-text">执行成功时会有炫酷的庆祝动画效果！</div>
+                </div>
+            </div>
+            
+            <!-- 常见问题 -->
+            <div class="step-card">
+                <div class="step-number">?</div>
+                <h3 class="step-title">❓ 常见问题</h3>
+                <div class="step-description">
+                    <strong>Q: 为什么执行失败？</strong><br>
+                    A: 请检查 API Token 是否正确，工作流ID是否有效，网络连接是否正常。
+                </div>
+                <div class="step-description">
+                    <strong>Q: 执行时间很长怎么办？</strong><br>
+                    A: 复杂工作流需要更多时间，请耐心等待。页面会显示实时状态。
+                </div>
+                <div class="step-description">
+                    <strong>Q: 如何获取工作流ID？</strong><br>
+                    A: 在 Coze 平台的工作流详情页面，URL 中包含工作流ID。
+                </div>
+                <div class="warning">
+                    <div class="warning-title">🆘 需要帮助？</div>
+                    <div class="tips-text">联系作者：微信 Love_Gws_1314</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
